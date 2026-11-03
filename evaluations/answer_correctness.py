@@ -1,6 +1,9 @@
 import sys
+import time
 from pathlib import Path
 from uuid import uuid4
+
+from groq import RateLimitError
 
 sys.path.insert(
     0,
@@ -19,8 +22,18 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+def invoke_with_rate_limit_retry(input_data, config, max_attempts=4):
+    for attempt in range(max_attempts):
+        try:
+            return agent.invoke(input_data, config=config)
+        except RateLimitError:
+            if attempt == max_attempts - 1:
+                raise
+            time.sleep(10 * (2**attempt))
+
+
 for golden in dataset.goldens:
-    response = agent.invoke(
+    response = invoke_with_rate_limit_retry(
         {"messages": [{"role": "user", "content": golden.input}]},
         config={"configurable": {"thread_id": str(uuid4())},
         "callbacks": [CallbackHandler()]}
@@ -44,6 +57,7 @@ for golden in dataset.goldens:
     )
 
     dataset.add_test_case(test_case)
+    time.sleep(2)
 
 metrics = [GEval(
             name="Answer Correctness",
